@@ -1,66 +1,57 @@
-use ic_cdk_macros::{query, update};
-use std::collections::VecDeque;
-use std::io::{self, Write};
+use ic_cdk::query;
+use ic_cdk_macros::*;
+use std::cell::RefCell;
+use serde::{Deserialize, Serialize};
 
-fn main() {
-    let mut tasks: VecDeque<String> = VecDeque::new();
+#[derive(Clone, Debug, Default,Deserialize, Serialize)]
+struct Todo {
+    id: u64,
+    task: String,
+    completed: bool,
+}
 
-    loop {
-        println!("\nTo-Do List:");
-        println!("1. Add Task");
-        println!("2. Remove Task");
-        println!("3. View Tasks");
-        println!("4. Exit");
-        print!("Choose an option: ");
-        io::stdout().flush().unwrap();
+thread_local! {
+    static TODOS: RefCell<Vec<Todo>> = RefCell::new(Vec::new());
+}
 
-        let mut choice = String::new();
-        io::stdin().read_line(&mut choice).unwrap();
-        let choice = choice.trim();
+#[update]
+fn add_task(task: String) -> u64 {
+    TODOS.with(|todos| {
+        let mut list = todos.borrow_mut();
+        let id = list.len() as u64 + 1;
+        list.push(Todo {
+            id,
+            task,
+            completed: false,
+        });
+        id
+    })
+}
 
-        match choice {
-            "1" => {
-                print!("Enter task: ");
-                io::stdout().flush().unwrap();
-                let mut task = String::new();
-                io::stdin().read_line(&mut task).unwrap();
-                tasks.push_back(task.trim().to_string());
-                println!("Task added.");
-            }
-            "2" => {
-                if tasks.is_empty() {
-                    println!("No tasks to remove.");
-                } else {
-                    println!("Enter task number to remove: ");
-                    let mut index = String::new();
-                    io::stdin().read_line(&mut index).unwrap();
-                    if let Ok(idx) = index.trim().parse::<usize>() {
-                        if idx > 0 && idx <= tasks.len() {
-                            tasks.remove(idx - 1);
-                            println!("Task removed.");
-                        } else {
-                            println!("Invalid task number.");
-                        }
-                    } else {
-                        println!("Invalid input.");
-                    }
-                }
-            }
-            "3" => {
-                if tasks.is_empty() {
-                    println!("No tasks available.");
-                } else {
-                    println!("Your Tasks:");
-                    for (i, task) in tasks.iter().enumerate() {
-                        println!("{}. {}", i + 1, task);
-                    }
-                }
-            }
-            "4" => {
-                println!("Exiting... Goodbye!");
-                break;
-            }
-            _ => println!("Invalid choice, please try again."),
+#[update]
+fn complete_task(id: u64) -> bool {
+    TODOS.with(|todos| {
+        let mut list = todos.borrow_mut();
+        if let Some(todo) = list.iter_mut().find(|t| t.id == id) {
+            todo.completed = true;
+            true
+        } else {
+            false
         }
-    }
+    })
+}
+
+#[update]
+fn remove_task(id: u64) -> bool {
+    TODOS.with(|todos| {
+        let mut list = todos.borrow_mut();
+        let len_before = list.len();
+        list.retain(|t| t.id != id);
+        list.len() < len_before
+    })
+}
+
+#[query]
+fn get_tasks() -> Vec<Todo> {
+    TODOS.with(|todos| todos.borrow().clone())
 }
